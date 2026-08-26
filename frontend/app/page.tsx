@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 
 import { AudioPlayer, MicStreamer } from "@/lib/audio";
-import { startThinking, stopThinking } from "@/lib/filler";
 import { VoiceSocket } from "@/lib/voiceSocket";
 
 const BACKEND_WS_URL = process.env.NEXT_PUBLIC_BACKEND_WS_URL ?? "ws://localhost:8081/voice";
@@ -52,11 +51,9 @@ export default function Home() {
           setState("ready");
           break;
         case "audio":
-          stopThinking(); // real response has started — stop the filler
           playerRef.current?.enqueue(event.data);
           break;
         case "turn_complete":
-          stopThinking();
           setState("ready");
           break;
         case "interrupted":
@@ -66,10 +63,8 @@ export default function Home() {
           // (e.g. a chunk from the old turn already in flight over the
           // network when we reset) so it never gets heard.
           playerRef.current?.reset();
-          stopThinking();
           break;
         case "error":
-          stopThinking();
           // A generic transport-level error can fire alongside/after a more
           // specific one the backend already relayed — whichever arrives
           // first should stick, not get clobbered by a vaguer one.
@@ -77,7 +72,6 @@ export default function Home() {
           setState("error");
           break;
         case "closed":
-          stopThinking();
           setErrorMessage((prev) => prev ?? "The voice server disconnected.");
           setState("error");
           break;
@@ -100,10 +94,7 @@ export default function Home() {
     // locally, since interrupting Gemini doesn't retroactively un-send the
     // chunks it already sent us.
     if (state !== "ready" && state !== "responding") return;
-    if (state === "responding") {
-      playerRef.current?.reset();
-      stopThinking();
-    }
+    if (state === "responding") playerRef.current?.reset();
     try {
       voiceSocketRef.current?.startTurn();
       const mic = new MicStreamer();
@@ -121,7 +112,6 @@ export default function Home() {
     micRef.current?.stop();
     voiceSocketRef.current?.endTurn();
     setState("responding");
-    startThinking();
   }
 
   return (
