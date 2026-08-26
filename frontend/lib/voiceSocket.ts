@@ -4,6 +4,7 @@
 export type VoiceEvent =
   | { type: "ready" }
   | { type: "turn_complete" }
+  | { type: "interrupted" }
   | { type: "closed" }
   | { type: "error"; message: string }
   | { type: "audio"; data: ArrayBuffer };

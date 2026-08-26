@@ -15,6 +15,7 @@ const VOICE_NAME = process.env.GEMINI_LIVE_VOICE ?? "Aoede";
 export interface GeminiSessionCallbacks {
   onAudio: (pcm: Buffer) => void;
   onTurnComplete: () => void;
+  onInterrupted: () => void;
   onError: (message: string) => void;
   onClose: () => void;
 }
@@ -22,6 +23,12 @@ export interface GeminiSessionCallbacks {
 export class GeminiVoiceSession {
   private session: Session | null = null;
   private connecting: Promise<void>;
+  // An interrupted turn still sends its own trailing turnComplete afterward
+  // (per the SDK: "interrupted > turn_complete") - that's Gemini closing out
+  // the *old*, already-discarded turn, not completion of whatever the child
+  // just asked instead. Swallow exactly that one stray completion so it
+  // can't flip the frontend back to "ready" mid-way through the real answer.
+  private suppressNextTurnComplete = false;
 
   constructor(apiKey: string, callbacks: GeminiSessionCallbacks) {
     // v1beta doesn't have the live-capable models available for every key;
@@ -57,14 +64,24 @@ export class GeminiVoiceSession {
         },
         callbacks: {
           onmessage: (message: LiveServerMessage) => {
+            if (message.serverContent?.interrupted) {
+              this.suppressNextTurnComplete = true;
+              callbacks.onInterrupted();
+            }
+
             const audioPart = message.serverContent?.modelTurn?.parts?.find(
               (p) => p.inlineData?.data
             );
             if (audioPart?.inlineData?.data) {
               callbacks.onAudio(Buffer.from(audioPart.inlineData.data, "base64"));
             }
+
             if (message.serverContent?.turnComplete) {
-              callbacks.onTurnComplete();
+              if (this.suppressNextTurnComplete) {
+                this.suppressNextTurnComplete = false;
+              } else {
+                callbacks.onTurnComplete();
+              }
             }
           },
           onerror: (event) => {

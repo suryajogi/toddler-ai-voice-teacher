@@ -41,6 +41,7 @@ wss.on("connection", (ws) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(pcm);
     },
     onTurnComplete: () => sendJson(ws, { type: "turn_complete" }),
+    onInterrupted: () => sendJson(ws, { type: "interrupted" }),
     onError: (message) => {
       sendJson(ws, { type: "error", message });
       ws.close();
