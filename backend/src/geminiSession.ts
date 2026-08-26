@@ -6,7 +6,7 @@
 // check https://ai.google.dev/gemini-api/docs/live and adjust here — the
 // relay protocol to the frontend (voiceSocket.ts) does not need to change.
 
-import { GoogleGenAI, Modality, Session, LiveServerMessage } from "@google/genai";
+import { ActivityHandling, GoogleGenAI, Modality, Session, LiveServerMessage } from "@google/genai";
 import { TEACHER_SYSTEM_INSTRUCTION } from "./teacherPersona.js";
 
 const MODEL = process.env.GEMINI_LIVE_MODEL ?? "gemini-2.5-flash-native-audio-latest";
@@ -47,6 +47,12 @@ export class GeminiVoiceSession {
           // which was adding most of the perceived response latency.
           realtimeInputConfig: {
             automaticActivityDetection: { disabled: true },
+            // A fresh activityStart while Gemini is still talking cuts its
+            // current response off ("barge in") — this is Gemini's own
+            // default, but set explicitly since the frontend's ability to
+            // interrupt depends on it and shouldn't silently break if
+            // Google ever changes the default.
+            activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
           },
         },
         callbacks: {

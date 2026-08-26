@@ -13,7 +13,7 @@ const STATE_LABEL: Record<State, string> = {
   connecting: "Connecting…",
   ready: "Press and hold to talk!",
   listening: "I'm listening…",
-  responding: "🧸",
+  responding: "🧸 (press to ask something else!)",
   error: "Oops, something went wrong.",
 };
 
@@ -78,7 +78,15 @@ export default function Home() {
   }, []);
 
   async function handlePressStart() {
-    if (state !== "ready") return;
+    // Allow a press to interrupt a response in progress ("barge in"), not
+    // just start a fresh turn from idle. Gemini's default activityHandling
+    // (START_OF_ACTIVITY_INTERRUPTS — set explicitly in geminiSession.ts)
+    // cuts off its current response as soon as it sees a new activityStart;
+    // we just need to also stop whatever audio we're already playing
+    // locally, since interrupting Gemini doesn't retroactively un-send the
+    // chunks it already sent us.
+    if (state !== "ready" && state !== "responding") return;
+    if (state === "responding") playerRef.current?.reset();
     try {
       voiceSocketRef.current?.startTurn();
       const mic = new MicStreamer();
