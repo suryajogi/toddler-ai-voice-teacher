@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toddler AI Voice Teacher</title>
+<meta name="description" content="A voice-first AI teacher for toddlers, in English and Telugu — what it is, and how to run it on a Mac, iPhone, or Android phone.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎙️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fff8ec;
+    --panel: #ffffff;
+    --ink: #3a2e1f;
+    --ink-soft: #7a6a55;
+    --accent: #f59e0b;
+    --accent-dark: #b45309;
+    --green: #10b981;
+    --red: #e11d48;
+    --border: #f0e3c8;
+    --code-bg: #2b2320;
+    --code-ink: #f5eee0;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    line-height: 1.6;
+  }
+  h1, h2, h3, .brand {
+    font-family: "Baloo 2", "Inter", sans-serif;
+    font-weight: 800;
+    color: var(--accent-dark);
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 0 24px; }
+
+  header.hero {
+    padding: 64px 0 40px;
+    text-align: center;
+  }
+  header.hero .emoji { font-size: 64px; line-height: 1; }
+  header.hero h1 { font-size: clamp(28px, 5vw, 42px); margin: 12px 0 8px; }
+  header.hero p.tagline { font-size: 18px; color: var(--ink-soft); margin: 0 0 20px; }
+  .badge-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .badge {
+    display: inline-block;
+    background: #fef3c7;
+    color: var(--accent-dark);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .cta {
+    display: inline-block;
+    margin-top: 24px;
+    background: var(--accent);
+    color: white;
+    text-decoration: none;
+    font-weight: 700;
+    padding: 12px 28px;
+    border-radius: 999px;
+    box-shadow: 0 4px 0 var(--accent-dark);
+  }
+  .cta:hover { filter: brightness(1.05); }
+
+  nav.toc {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px 20px;
+    margin: 32px 0;
+  }
+  nav.toc p { margin: 0 0 8px; font-weight: 600; color: var(--ink-soft); font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+  nav.toc ul { margin: 0; padding-left: 20px; columns: 2; }
+  nav.toc a { color: var(--accent-dark); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+
+  section { margin: 48px 0; }
+  section h2 { font-size: 24px; margin-bottom: 6px; }
+  section h2 .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px; height: 30px;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    font-size: 15px;
+    margin-right: 10px;
+    vertical-align: middle;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+  }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 620px) { .grid-2 { grid-template-columns: 1fr; } nav.toc ul { columns: 1; } }
+
+  pre {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 16px 18px;
+    border-radius: 12px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; }
+  :not(pre) > code {
+    background: #f4ead2;
+    color: var(--accent-dark);
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-size: 0.9em;
+  }
+
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: #fffaf0;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin: 16px 0;
+    font-size: 15px;
+  }
+  .callout.warn { border-left-color: var(--red); background: #fef2f4; }
+  .callout strong { color: var(--accent-dark); }
+  .callout.warn strong { color: var(--red); }
+
+  ol, ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--ink-soft); font-weight: 600; }
+
+  footer {
+    text-align: center;
+    padding: 40px 0 64px;
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+  footer a { color: var(--accent-dark); }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="emoji">🎙️🧸</div>
+    <h1>Toddler AI Voice Teacher</h1>
+    <p class="tagline">A voice-first AI teacher for toddlers — English + Telugu</p>
+    <div class="badge-row">
+      <span class="badge">Phase 1: Voice Prototype</span>
+      <span class="badge">Powered by Gemini Live</span>
+      <span class="badge">No reading required</span>
+    </div>
+    <a class="cta" href="#mac">Get started ↓</a>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc">
+    <p>On this page</p>
+    <ul>
+      <li><a href="#what">What this is</a></li>
+      <li><a href="#need">What you need</a></li>
+      <li><a href="#mac">1. Mac / laptop</a></li>
+      <li><a href="#phone">2. iPhone / Android</a></li>
+      <li><a href="#trouble">Troubleshooting</a></li>
+    </ul>
+  </nav>
+
+  <section id="what">
+    <h2>What this is</h2>
+    <p>
+      A child presses one button, speaks in English, Telugu, or a natural
+      mix of both, and hears an immediate spoken response — no reading, no
+      typing. It teaches the alphabet, numbers, colors, animals, vocabulary,
+      songs, and short stories, in a warm, encouraging, age-appropriate way.
+    </p>
+    <p>
+      This is the <strong>Phase 1 prototype</strong>: proving the core voice
+      experience first, before later phases add a learning curriculum,
+      progress tracking, and a parent dashboard.
+    </p>
+  </section>
+
+  <section id="need">
+    <h2>What you need</h2>
+    <div class="card">
+      <ul>
+        <li>A computer (Mac/laptop) to run the app — it isn't hosted publicly yet, so it always runs from someone's machine for now.</li>
+        <li><a href="https://nodejs.org" target="_blank" rel="noreferrer">Node.js</a> installed on that machine.</li>
+        <li>A <strong>Gemini API key</strong> from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Google AI Studio</a> (free to create; enable the Live API for it).</li>
+        <li>To use it from a phone: the phone on the <strong>same Wi-Fi network</strong> as the computer running the app.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="mac">
+    <h2><span class="num">1</span>On your Mac / laptop</h2>
+    <p>This is the machine that actually runs the app; phones connect to it over the network.</p>
+    <pre><code>git clone https://github.com/suryajogi/toddler-ai-voice-teacher.git
+cd toddler-ai-voice-teacher
+
+# Backend
+cd backend
+npm install
+cp .env.example .env
+# open .env and set GEMINI_API_KEY=&lt;your key&gt;
+npm run dev</code></pre>
+    <p>Leave that running, then in a second terminal:</p>
+    <pre><code>cd toddler-ai-voice-teacher/frontend
+npm install
+npm run dev</code></pre>
+    <p>
+      Next.js prints a URL, typically <code>http://localhost:3000</code>.
+      Open it in Chrome or Safari <strong>on that same Mac</strong> —
+      press and hold the button, speak, and let go to hear the response.
+    </p>
+  </section>
+
+  <section id="phone">
+    <h2><span class="num">2</span>On an iPhone or Android phone</h2>
+    <div class="callout warn">
+      <strong>Read this before trying it:</strong> phones only allow a web
+      page to use the microphone over a secure (<code>https://</code>)
+      connection, or on literally <code>localhost</code>. Your phone isn't
+      the computer running the app, so it can't use <code>localhost</code>
+      — and a plain local-network address like
+      <code>http://192.168.1.83:3000</code> is treated as insecure, so the
+      browser silently refuses microphone access even though the page loads
+      fine. This isn't a bug in the app; it's how every phone browser works.
+    </div>
+
+    <p><strong>The fix: a quick HTTPS tunnel</strong>, using a free tool called
+    <code>cloudflared</code> (no account needed). Do this on the Mac, with
+    both <code>npm run dev</code> processes from step 1 already running:</p>
+
+    <pre><code>brew install cloudflared
+
+# Terminal 3 — tunnel the frontend (Next.js)
+cloudflared tunnel --url http://localhost:3000
+
+# Terminal 4 — tunnel the backend (the voice relay)
+cloudflared tunnel --url http://localhost:8081</code></pre>
+
+    <p>Each command prints a random <code>https://something.trycloudflare.com</code> URL — note both.</p>
+
+    <ol>
+      <li>Take the <strong>backend's</strong> tunnel URL, swap <code>https://</code> for <code>wss://</code>, and add <code>/voice</code> — e.g. <code>wss://random-words-1234.trycloudflare.com/voice</code>.</li>
+      <li>In <code>frontend/.env.local</code> (copy from <code>.env.local.example</code> if needed), set <code>NEXT_PUBLIC_BACKEND_WS_URL</code> to that <code>wss://…/voice</code> URL.</li>
+      <li>Restart the frontend — it needs a restart to pick up the new env var.</li>
+      <li>On the phone, open the <strong>frontend's</strong> tunnel URL in its browser.</li>
+    </ol>
+
+    <p>The mic permission prompt should now appear normally — allow it, and the button works the same as on the Mac.</p>
+
+    <div class="callout">
+      Both tunnel URLs are temporary and change every time you re-run the
+      <code>cloudflared</code> commands, so you'll redo steps 1–3 each
+      session. This is a testing workaround for the current local-only
+      prototype — a real hosted deployment (planned for a later phase)
+      would make this unnecessary.
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3 style="margin-top:0; font-size:16px;">🤖 Android shortcut</h3>
+        <p style="font-size:14px; margin-bottom:0;">
+          Chrome on Android has a flag,
+          <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>,
+          where you can allowlist your Mac's
+          <code>http://192.168.x.x:3000</code> address directly, skipping
+          the tunnel entirely.
+        </p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0; font-size:16px;">🍎 iPhone note</h3>
+        <p style="font-size:14px; margin-bottom:0;">
+          iOS Safari has no equivalent flag — the tunnel above is the only
+          way to test the real microphone experience on an iPhone.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="trouble">
+    <h2>Troubleshooting</h2>
+    <table>
+      <tr><th>Symptom</th><th>Likely cause</th></tr>
+      <tr>
+        <td>"GEMINI_API_KEY is not configured on the server"</td>
+        <td>No real key in <code>backend/.env</code> yet, or the backend needs restarting after adding one.</td>
+      </tr>
+      <tr>
+        <td>Button never turns green / stuck on "Connecting…"</td>
+        <td>Frontend can't reach the backend — check <code>NEXT_PUBLIC_BACKEND_WS_URL</code> matches where the backend is actually reachable.</td>
+      </tr>
+      <tr>
+        <td>No microphone prompt on a phone</td>
+        <td>You're on a plain <code>http://</code> address — see the tunnel steps above.</td>
+      </tr>
+      <tr>
+        <td>"Connection to voice server failed" right after looking ready</td>
+        <td>Usually an invalid/expired API key — double-check it and that the Live API is enabled.</td>
+      </tr>
+    </table>
+  </section>
+
+</div>
+
+<footer>
+  <p><a href="https://github.com/suryajogi/toddler-ai-voice-teacher">View the source on GitHub</a></p>
+</footer>
+
+</body>
+</html>

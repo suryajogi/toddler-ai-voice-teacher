@@ -18,6 +18,11 @@ Full requirements are in `Toddler_AI_Voice_Teacher_Requirements.docx`
 - **Parent-controlled** — no personal information collected, safety
   boundaries baked into the AI's behavior.
 
+**New here?** [**Read the project site →**](https://suryajogi.github.io/toddler-ai-voice-teacher/)
+for a friendlier walkthrough of all of this, including exactly how to run
+it on a Mac and use it from an iPhone or Android phone. The same content,
+in plain Markdown, is in [`USAGE.md`](./USAGE.md).
+
 ## Status: Phase 1 — Voice Prototype
 
 Per the requirements doc's own phased roadmap, this repo currently
