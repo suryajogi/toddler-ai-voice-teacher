@@ -9,7 +9,7 @@
 import { GoogleGenAI, Modality, Session, LiveServerMessage } from "@google/genai";
 import { TEACHER_SYSTEM_INSTRUCTION } from "./teacherPersona.js";
 
-const MODEL = process.env.GEMINI_LIVE_MODEL ?? "gemini-live-2.5-flash-preview";
+const MODEL = process.env.GEMINI_LIVE_MODEL ?? "gemini-2.5-flash-native-audio-latest";
 const VOICE_NAME = process.env.GEMINI_LIVE_VOICE ?? "Aoede";
 
 export interface GeminiSessionCallbacks {
@@ -24,7 +24,9 @@ export class GeminiVoiceSession {
   private connecting: Promise<void>;
 
   constructor(apiKey: string, callbacks: GeminiSessionCallbacks) {
-    const ai = new GoogleGenAI({ apiKey });
+    // v1beta doesn't have the live-capable models available for every key;
+    // v1alpha does. See geminiSession.ts's module comment.
+    const ai = new GoogleGenAI({ apiKey, apiVersion: "v1alpha" });
 
     this.connecting = ai.live
       .connect({
@@ -52,9 +54,11 @@ export class GeminiVoiceSession {
             }
           },
           onerror: (event) => {
+            console.error("Gemini Live onerror:", event);
             callbacks.onError(event.message || "Gemini Live session error");
           },
-          onclose: () => {
+          onclose: (event) => {
+            console.error("Gemini Live onclose:", event?.code, event?.reason);
             callbacks.onClose();
           },
         },

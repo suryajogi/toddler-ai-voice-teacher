@@ -99,17 +99,24 @@ port). Press and hold the button, speak, and let go to hear the response.
 
 ## Notes on the Gemini Live API surface
 
-The Live API (model names, exact SDK shapes) moves fast. This was built
-against `@google/genai`'s documented `ai.live` surface and its own example
-code (`gemini-live-2.5-flash-preview` as the model,
-`speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName` for voice
-selection). If Google has renamed things since, check
-[the current Live API docs](https://ai.google.dev/gemini-api/docs/live) —
-`GEMINI_LIVE_MODEL` and `GEMINI_LIVE_VOICE` in `backend/.env` are overridable
-without touching code.
+The Live API (model names, which API version exposes them, exact SDK
+shapes) moves fast, and which models a given key/project can access varies
+— **which live model your key can use is not something to guess**, it's
+something to ask the API. If `GEMINI_LIVE_MODEL`'s default in
+`backend/.env.example` doesn't work for your key (you'll see a `1008 model
+not found` close reason in the backend log), run the `models.list()`
+snippet in `.env.example` to get the real list for your account, and set
+`GEMINI_LIVE_MODEL` to one of the returned names ending in
+`bidiGenerateContent` support.
 
-This has **not** been tested against a real Gemini key yet (no key was
-available while building it) — the relay, error handling, and UI have all
-been verified against a running backend with no/invalid credentials, which
-exercises every code path except an actual successful voice round-trip.
-That's the first thing to check once you have a real key.
+The default connects via `apiVersion: "v1alpha"` — some live-capable models
+aren't exposed on the stable `v1beta` surface yet. `speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName`
+is the voice-selection field; see
+[the current Live API docs](https://ai.google.dev/gemini-api/docs/live) if
+Google has changed the shape since.
+
+This has been verified end-to-end against a real Gemini key: the backend
+opens a live session and stays connected with no errors, and the frontend
+reaches the green "ready" state and can open the mic. What hasn't been
+machine-verified is a full spoken conversation (I can't generate real
+toddler speech from a script) — that's the one thing to try yourself.
