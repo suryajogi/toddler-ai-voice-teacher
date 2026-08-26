@@ -1,0 +1,7 @@
+theme: jekyll-theme-minimal
+title: Toddler AI Voice Teacher — How It Works
+description: >-
+  A from-zero technical walkthrough of the Toddler AI Voice Teacher's
+  code, written for a reader with no prior Node.js, TypeScript, or React
+  experience.
+show_downloads: false
