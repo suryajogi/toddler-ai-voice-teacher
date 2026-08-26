@@ -6,12 +6,6 @@
 .env.local
 .env.*.local
 
-# Python
-.venv/
-__pycache__/
-*.py[cod]
-*.egg-info/
-
 # Node
 node_modules/
 .next/
