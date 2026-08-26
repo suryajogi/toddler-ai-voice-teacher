@@ -40,6 +40,14 @@ export class GeminiVoiceSession {
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE_NAME } },
           },
+          // The UI is push-to-talk (the button press/release IS the turn
+          // boundary), so let the client say exactly when speech starts and
+          // ends instead of Gemini's own silence-duration VAD guessing it -
+          // that guess defaults to a multi-second pause-before-committing,
+          // which was adding most of the perceived response latency.
+          realtimeInputConfig: {
+            automaticActivityDetection: { disabled: true },
+          },
         },
         callbacks: {
           onmessage: (message: LiveServerMessage) => {
@@ -73,17 +81,21 @@ export class GeminiVoiceSession {
     return this.connecting;
   }
 
+  /** Call when the button is pressed, before the first audio chunk. */
+  startTurn(): void {
+    this.session?.sendRealtimeInput({ activityStart: {} });
+  }
+
   sendAudioChunk(pcm16Mono16k: Buffer): void {
     this.session?.sendRealtimeInput({
       audio: { data: pcm16Mono16k.toString("base64"), mimeType: "audio/pcm;rate=16000" },
     });
   }
 
+  /** Call when the button is released — with automatic VAD disabled, this
+   * (not silence detection) is what tells Gemini the child is done talking. */
   endTurn(): void {
-    // Gemini Live also detects end-of-turn via voice-activity-detection on
-    // its own; this explicit signal just makes push-to-talk (button
-    // release) feel immediate instead of waiting on VAD silence timeout.
-    this.session?.sendRealtimeInput({ audioStreamEnd: true });
+    this.session?.sendRealtimeInput({ activityEnd: {} });
   }
 
   close(): void {

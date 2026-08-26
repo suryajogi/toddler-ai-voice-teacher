@@ -80,6 +80,7 @@ export default function Home() {
   async function handlePressStart() {
     if (state !== "ready") return;
     try {
+      voiceSocketRef.current?.startTurn();
       const mic = new MicStreamer();
       micRef.current = mic;
       await mic.start((chunk) => voiceSocketRef.current?.sendAudioChunk(chunk));

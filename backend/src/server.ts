@@ -70,7 +70,8 @@ wss.on("connection", (ws) => {
     }
     try {
       const control = JSON.parse(data.toString());
-      if (control.type === "end_turn") geminiSession.endTurn();
+      if (control.type === "start_turn") geminiSession.startTurn();
+      else if (control.type === "end_turn") geminiSession.endTurn();
     } catch {
       console.warn("Ignoring malformed control message from client");
     }

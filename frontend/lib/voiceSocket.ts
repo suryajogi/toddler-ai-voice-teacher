@@ -32,6 +32,10 @@ export class VoiceSocket {
     ws.onclose = () => onEvent({ type: "closed" });
   }
 
+  startTurn(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "start_turn" }));
+  }
+
   sendAudioChunk(pcm16: ArrayBuffer): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(pcm16);
   }
