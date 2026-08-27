@@ -10,3 +10,7 @@
 node_modules/
 .next/
 dist/
+
+# Local learning data (session transcripts/summaries) — this is the
+# specific child's data, not sample/demo content, so it never gets committed.
+backend/data/

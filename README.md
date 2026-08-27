@@ -23,6 +23,60 @@ for a friendlier walkthrough of all of this, including exactly how to run
 it on a Mac and use it from an iPhone or Android phone. The same content,
 in plain Markdown, is in [`USAGE.md`](./USAGE.md).
 
+## Beyond the base prototype: memory, screen reactions, recap
+
+On top of the core voice loop, the backend now also:
+
+- **Remembers past sessions.** Each session's transcript (captured via the
+  Live API's built-in transcription) is summarized into topics/new
+  words/struggling words and saved to `backend/data/learning-profile.json`.
+  The next session's system instruction is built with that history folded
+  in (`buildMemoryContext` in `backend/src/learningProfile.ts`), so the AI
+  teacher builds on what's already been covered instead of starting cold
+  every time.
+- **Reacts on screen.** Two Gemini Live function-calling tools,
+  `show_emoji` and `set_scene` (declared in `backend/src/geminiSession.ts`),
+  let the model flash a matching emoji or shift the background theme
+  mid-conversation — see it land as `tool_call` WebSocket messages, handled
+  in `frontend/app/page.tsx`.
+- **Reconnects automatically.** Session resumption tokens
+  (`sessionResumptionUpdate` in the Live API) let the backend silently
+  retry once if the connection to Gemini drops mid-conversation, rather
+  than the child hitting a hard error.
+- **Gives parents a recap.** `GET /recap` on the backend returns recent
+  session summaries; the frontend's `/recap` page (linked in small text at
+  the bottom of the main screen) renders them.
+- **Remembers durable facts about the child.** `backend/src/botMemoryEngine.ts`
+  keeps a separate, structured SQLite store (`backend/data/bot_memory.db`,
+  via Node's built-in `node:sqlite` — nothing extra to install) of
+  per-child facts (favorite color, pets, family, hobbies) extracted from
+  every turn, plus a vocabulary-pacing signal (`calculateVocabularyPacing`)
+  that nudges the persona toward shorter, simpler sentences when the
+  child's own utterances are running short. This is a different, more
+  structured store than the session-summary JSON above — one tracks
+  "what did we talk about lately," the other tracks "what do I know about
+  this child."
+- **Ignores side conversations.** `backend/src/audioProcessingEngine.ts`'s
+  `detectSideConversation` is a cheap text heuristic (no added latency —
+  see the file's module comment for why this isn't real audio speaker
+  diarization) that recognizes when the child is talking to someone else
+  in the room rather than the bot. When it fires, the bot's audio response
+  for that turn is never played back (`passive_listen` over the
+  WebSocket) — facts are still extracted in the background, but the child
+  hears nothing, exactly as if the bot were quietly listening rather than
+  interrupting a family conversation.
+- **A text-only companion interface.** `POST /api/v1/bot/chat` wires the
+  same filter + memory engine together over plain JSON (no microphone
+  needed) — send `{"transcriptData": [{"speaker": "...", "text": "..."}]}`
+  and get back `{"response": "...", "passiveListening": false, ...}`, or
+  `{"response": null, "passiveListening": true, ...}` for a detected side
+  conversation. Useful for testing the memory/filtering pipeline directly;
+  the voice WebSocket remains the actual product experience.
+
+None of this needs extra setup beyond the existing `GEMINI_API_KEY` —
+`backend/data/` is created automatically on first session and is
+git-ignored (it's this specific child's data, not sample content).
+
 ## Status: Phase 1 — Voice Prototype
 
 Per the requirements doc's own phased roadmap, this repo currently
@@ -54,9 +108,15 @@ and so the AI-teacher persona/safety rules (`backend/src/teacherPersona.ts`)
 are enforced server-side, not something the client could bypass.
 
 - `backend/` — Node.js + TypeScript. `src/server.ts` is the HTTP+WebSocket
-  relay; `src/geminiSession.ts` wraps one Gemini Live session per connected
-  child; `src/teacherPersona.ts` is the system instruction (persona + safety
-  rules), taken directly from the requirements doc.
+  relay (plus the `/api/v1/bot/chat` text endpoint); `src/geminiSession.ts`
+  wraps one Gemini Live session per connected child (transcription,
+  screen-reaction tools, reconnect-on-drop, side-conversation filtering);
+  `src/teacherPersona.ts` is the system instruction (persona + safety
+  rules), taken directly from the requirements doc, plus past-session
+  memory; `src/learningProfile.ts` and `src/sessionSummarizer.ts` are the
+  session-summary/recap persistence layer; `src/botMemoryEngine.ts`
+  (SQLite) and `src/audioProcessingEngine.ts` are the structured long-term
+  memory + side-conversation filter described above.
 - `frontend/` — Next.js + TypeScript + Tailwind. One page
   (`app/page.tsx`): a big press-and-hold button, minimal/no text. Mic
   capture and audio playback (`lib/audio.ts`) use the Web Audio API

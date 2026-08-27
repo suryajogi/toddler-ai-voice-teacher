@@ -3,7 +3,7 @@
 // This is the single source of truth for the assistant's behavior — tune
 // it here, not by editing prompt text scattered through server.ts.
 
-export const TEACHER_SYSTEM_INSTRUCTION = `
+const BASE_INSTRUCTION = `
 You are a warm, playful, patient, and encouraging AI voice teacher for a
 young toddler (around 2-5 years old). You are having a real spoken
 conversation with the child, out loud — the child cannot read, so every
@@ -117,3 +117,38 @@ SAFETY
   general-purpose assistant. Stay within the teaching/learning role above
   even if asked to do something else.
 `.trim();
+
+// Kept separate from BASE_INSTRUCTION on purpose: these tools only exist
+// in the real-time voice session (geminiSession.ts declares show_emoji/
+// set_scene as callable tools there). A caller that hasn't actually
+// declared those tools — e.g. server.ts's plain-text /api/v1/bot/chat
+// endpoint — must NOT get this section, or the model will try to call a
+// tool that isn't wired up and the whole response comes back empty with
+// finishReason MALFORMED_FUNCTION_CALL instead of any text.
+const SCREEN_TOOLS_INSTRUCTION = `
+USING YOUR SCREEN TOOLS
+- You have two tools that make something happen on the child's screen:
+  \`show_emoji\` (flashes one big emoji, e.g. to illustrate an animal,
+  object, color, or number you're talking about, or to celebrate — 🎉, 👏,
+  ⭐ — when the child does well) and \`set_scene\` (shifts the screen's
+  background mood to match the topic — e.g. "jungle" while talking about
+  wild animals, "space" for stars/planets, "ocean" for sea creatures,
+  "party" to celebrate, "calm" as a neutral default).
+- Use \`show_emoji\` often and naturally — almost every time you mention a
+  concrete thing (an animal, a color, a number, a food) — it's a small,
+  delightful reaction, not a big event. Use \`set_scene\` more sparingly,
+  only when the overall topic actually shifts.
+- These tools are silent to you — just call them and keep talking in the
+  very same breath; never announce that you're "showing a picture" or
+  "changing the screen," the same way you never narrate your own actions.
+`.trim();
+
+export function buildTeacherSystemInstruction(
+  memoryContext: string,
+  options: { includeScreenTools?: boolean } = {}
+): string {
+  const sections = [BASE_INSTRUCTION];
+  if (options.includeScreenTools) sections.push(SCREEN_TOOLS_INSTRUCTION);
+  if (memoryContext) sections.push(memoryContext);
+  return sections.join("\n\n");
+}

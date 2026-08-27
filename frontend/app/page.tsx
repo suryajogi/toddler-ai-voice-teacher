@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { AudioPlayer, MicStreamer } from "@/lib/audio";
@@ -7,13 +8,14 @@ import { VoiceSocket } from "@/lib/voiceSocket";
 
 const BACKEND_WS_URL = process.env.NEXT_PUBLIC_BACKEND_WS_URL ?? "ws://localhost:8081/voice";
 
-type State = "connecting" | "ready" | "listening" | "responding" | "error";
+type State = "connecting" | "ready" | "listening" | "responding" | "reconnecting" | "error";
 
 const STATE_LABEL: Record<State, string> = {
   connecting: "Connecting…",
   ready: "Press and hold to talk!",
   listening: "I'm listening…",
   responding: "🧸 (press to ask something else!)",
+  reconnecting: "One sec, reconnecting…",
   error: "Oops, something went wrong.",
 };
 
@@ -22,16 +24,36 @@ const STATE_COLOR: Record<State, string> = {
   ready: "bg-emerald-400 hover:bg-emerald-300 active:bg-emerald-500",
   listening: "bg-rose-400",
   responding: "bg-sky-400",
+  reconnecting: "bg-amber-300",
   error: "bg-zinc-300",
 };
+
+// The set_scene tool (see backend/src/geminiSession.ts) only ever sends one
+// of these five theme names — a fixed set so the frontend only ever needs
+// to style a known, small palette rather than trust arbitrary AI output.
+type SceneTheme = "jungle" | "space" | "ocean" | "party" | "calm";
+
+const SCENE_GRADIENTS: Record<SceneTheme, string> = {
+  jungle: "linear-gradient(180deg, #eafbea 0%, #cdf0c6 100%)",
+  space: "linear-gradient(180deg, #e8e8ff 0%, #c9caf5 100%)",
+  ocean: "linear-gradient(180deg, #e3f6fb 0%, #bfe9f5 100%)",
+  party: "linear-gradient(180deg, #fff0f7 0%, #ffd7ea 100%)",
+  calm: "linear-gradient(180deg, #fff8ec 0%, #fff8ec 100%)",
+};
+
+const EMOJI_DISPLAY_MS = 2200;
 
 export default function Home() {
   const [state, setState] = useState<State>("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [sceneTheme, setSceneTheme] = useState<SceneTheme>("calm");
+  const [activeEmoji, setActiveEmoji] = useState<string | null>(null);
+  const [emojiKey, setEmojiKey] = useState(0);
 
   const voiceSocketRef = useRef<VoiceSocket | null>(null);
   const micRef = useRef<MicStreamer | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
+  const emojiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // Guards against React Strict Mode's dev-only double-invocation of
@@ -56,6 +78,14 @@ export default function Home() {
         case "turn_complete":
           setState("ready");
           break;
+        case "passive_listen":
+          // The backend decided the child was talking to someone else in
+          // the room, not the bot (see backend/src/audioProcessingEngine.ts)
+          // — no audio was ever sent for that turn, so there's nothing to
+          // play; just quietly go back to ready, exactly as if nothing
+          // happened from the child's point of view.
+          setState("ready");
+          break;
         case "interrupted":
           // Gemini confirming the old response was cut off. The button
           // press that triggered this already reset local playback
@@ -63,6 +93,33 @@ export default function Home() {
           // (e.g. a chunk from the old turn already in flight over the
           // network when we reset) so it never gets heard.
           playerRef.current?.reset();
+          break;
+        case "tool_call":
+          // The AI teacher reacting on-screen mid-conversation — see
+          // backend/src/geminiSession.ts's show_emoji/set_scene tools and
+          // teacherPersona.ts's "USING YOUR SCREEN TOOLS" section for when
+          // it chooses to call these.
+          if (event.name === "show_emoji" && typeof event.args.emoji === "string") {
+            if (emojiTimeoutRef.current) clearTimeout(emojiTimeoutRef.current);
+            setEmojiKey((k) => k + 1);
+            setActiveEmoji(event.args.emoji as string);
+            emojiTimeoutRef.current = setTimeout(() => setActiveEmoji(null), EMOJI_DISPLAY_MS);
+          } else if (event.name === "set_scene" && typeof event.args.theme === "string") {
+            const theme = event.args.theme as string;
+            if (theme in SCENE_GRADIENTS) setSceneTheme(theme as SceneTheme);
+          }
+          break;
+        case "reconnecting":
+          // The connection to Gemini dropped and the backend is attempting
+          // one automatic reconnect (see geminiSession.ts) — the browser's
+          // own WebSocket to the backend is still open the whole time, so
+          // there's nothing for the frontend to redo, just a brief wait.
+          // If the child was mid-recording when it dropped, stop the mic
+          // rather than let it keep streaming into a session that's being
+          // torn down and reopened underneath it — they'll just press
+          // again once back to "ready."
+          micRef.current?.stop();
+          setState("reconnecting");
           break;
         case "error":
           // A generic transport-level error can fire alongside/after a more
@@ -82,6 +139,7 @@ export default function Home() {
       disposed = true;
       voiceSocket.close();
       micRef.current?.stop();
+      if (emojiTimeoutRef.current) clearTimeout(emojiTimeoutRef.current);
     };
   }, []);
 
@@ -115,7 +173,20 @@ export default function Home() {
   }
 
   return (
-    <main className="flex min-h-full flex-1 flex-col items-center justify-center gap-8 px-6 py-16 text-center">
+    <main
+      className="flex min-h-full flex-1 flex-col items-center justify-center gap-8 px-6 py-16 text-center transition-[background] duration-[1200ms] ease-in-out"
+      style={{ background: SCENE_GRADIENTS[sceneTheme] }}
+    >
+      {activeEmoji && (
+        <div
+          key={emojiKey}
+          aria-hidden="true"
+          className="emoji-pop pointer-events-none fixed inset-0 z-10 flex items-center justify-center text-[9rem] leading-none"
+        >
+          {activeEmoji}
+        </div>
+      )}
+
       <div>
         <p className="text-lg font-semibold text-amber-700">Toddler AI Voice Teacher</p>
         <p className="mt-1 text-sm text-[color:var(--foreground)]/60">English + Telugu</p>
@@ -123,7 +194,7 @@ export default function Home() {
 
       <button
         type="button"
-        disabled={state === "connecting" || state === "error"}
+        disabled={state === "connecting" || state === "error" || state === "reconnecting"}
         onPointerDown={handlePressStart}
         onPointerUp={handlePressEnd}
         onPointerLeave={handlePressEnd}
@@ -149,6 +220,10 @@ export default function Home() {
           </button>
         </div>
       )}
+
+      <Link href="/recap" className="mt-4 text-xs text-[color:var(--foreground)]/40 hover:underline">
+        For parents: today&apos;s recap
+      </Link>
     </main>
   );
 }

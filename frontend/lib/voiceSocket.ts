@@ -7,7 +7,10 @@ export type VoiceEvent =
   | { type: "interrupted" }
   | { type: "closed" }
   | { type: "error"; message: string }
-  | { type: "audio"; data: ArrayBuffer };
+  | { type: "audio"; data: ArrayBuffer }
+  | { type: "tool_call"; name: string; args: Record<string, unknown> }
+  | { type: "reconnecting" }
+  | { type: "passive_listen" };
 
 export class VoiceSocket {
   private ws: WebSocket | null = null;
