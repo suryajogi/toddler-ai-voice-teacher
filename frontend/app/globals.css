@@ -17,8 +17,11 @@ body {
   font-family: var(--font-baloo), Arial, Helvetica, sans-serif;
 }
 
-/* The show_emoji tool (backend/src/geminiSession.ts) flashes one big emoji
-   reaction on screen mid-conversation — this is that pop-in/pop-out. */
+/* The show_visual tool (backend/src/geminiSession.ts) shows one big emoji,
+   number, or letter on screen mid-conversation as a teaching aid — this is
+   that pop-in/hold/pop-out. Duration must match VISUAL_DISPLAY_MS in
+   frontend/app/page.tsx (the JS timeout that removes the element), so the
+   fade-out lands right as it's removed rather than sitting invisible. */
 @keyframes emoji-pop {
   0% { transform: scale(0.4) translateY(12px); opacity: 0; }
   15% { transform: scale(1.15) translateY(0); opacity: 1; }
@@ -28,5 +31,5 @@ body {
 }
 
 .emoji-pop {
-  animation: emoji-pop 2.2s ease forwards;
+  animation: emoji-pop 3.2s ease forwards;
 }

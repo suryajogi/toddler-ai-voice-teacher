@@ -81,9 +81,12 @@ reasons, both deliberate:
    WebSocket is (and how it differs from the more common REST-API style),
    and how audio is represented as data and streamed both directions.
 3. **[Backend Deep Dive](03-backend-deep-dive.html)** — `server.ts`,
-   `geminiSession.ts`, and `teacherPersona.ts`, explained.
-4. **[Frontend Deep Dive](04-frontend-deep-dive.html)** — `page.tsx`,
-   `audio.ts`, `voiceSocket.ts`, and the audio worklet, explained.
+   `geminiSession.ts`, and `teacherPersona.ts`, plus everything added
+   since: session memory, a SQLite long-term memory engine, a
+   side-conversation filter, and real song-lyrics lookup.
+4. **[Frontend Deep Dive](04-frontend-deep-dive.html)** — `page.tsx`
+   (including its activity menu), `audio.ts`, `voiceSocket.ts`, the audio
+   worklet, the parent recap page, and the standalone puzzle game.
 5. **[Glossary](05-glossary.html)** — every term used, in one place.
 
 If you already know what a terminal, npm, TypeScript, and React are,

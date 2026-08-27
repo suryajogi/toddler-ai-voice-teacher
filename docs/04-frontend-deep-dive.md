@@ -7,13 +7,15 @@ title: Frontend Deep Dive
 
 [← Backend Deep Dive](03-backend-deep-dive.html)
 
-The entire user-facing app is one page. This section covers
-`frontend/app/page.tsx` (the button and its states), `lib/voiceSocket.ts`
-(the WebSocket client), `lib/audio.ts` (microphone capture and audio
-playback), and `public/pcm-recorder-worklet.js` (the lowest-level audio
-conversion). `app/layout.tsx` is only a few lines — it sets the page
-title/font and wraps everything in the standard Next.js page shell — and
-isn't detailed further here.
+The main child-facing screen is still one page, but the app now has two
+more: a parent-facing recap and a standalone puzzle game. This section
+covers `frontend/app/page.tsx` (the button, the state machine, and the new
+activity menu), `lib/voiceSocket.ts` (the WebSocket client), `lib/audio.ts`
+(microphone capture and audio playback), `public/pcm-recorder-worklet.js`
+(the lowest-level audio conversion), `app/recap/page.tsx`, and
+`app/puzzle/page.tsx`. `app/layout.tsx` is only a few lines — it sets the
+page title/font and wraps everything in the standard Next.js page shell —
+and isn't detailed further here.
 
 ## `lib/voiceSocket.ts` — a thin wrapper around the browser's WebSocket
 
@@ -24,7 +26,10 @@ export type VoiceEvent =
   | { type: "interrupted" }
   | { type: "closed" }
   | { type: "error"; message: string }
-  | { type: "audio"; data: ArrayBuffer };
+  | { type: "audio"; data: ArrayBuffer }
+  | { type: "tool_call"; name: string; args: Record<string, unknown> }
+  | { type: "reconnecting" }
+  | { type: "passive_listen" };
 
 export class VoiceSocket {
   connect(url: string, onEvent: (event: VoiceEvent) => void): void {
@@ -40,24 +45,25 @@ export class VoiceSocket {
   startTurn(): void { this.ws?.send(JSON.stringify({ type: "start_turn" })); }
   sendAudioChunk(pcm16: ArrayBuffer): void { this.ws?.send(pcm16); }
   endTurn(): void { this.ws?.send(JSON.stringify({ type: "end_turn" })); }
+  selectActivity(activityId: string): void {
+    this.ws?.send(JSON.stringify({ type: "select_activity", activity: activityId }));
+  }
 }
 ```
 
 `VoiceEvent` is a TypeScript **union type** — "a `VoiceEvent` is *one of*
-these six exact shapes" (recognizable by its `type` field, a pattern
+these nine exact shapes" (recognizable by its `type` field, a pattern
 called a "discriminated union"). This is the frontend's mirror of exactly
-the message shapes `backend/src/server.ts` sends, the same
-"types on both sides must be kept in sync by hand" situation described
-for `ai-agent-demo`'s `lib/api.ts` in that project's own frontend guide.
-`WebSocket` here is a built-in browser API — no library needed to open
-one; `ws.binaryType = "arraybuffer"` just tells the browser "give me
-binary frames as an `ArrayBuffer`" (a raw block of bytes) rather than
-some other binary representation. The rest of the class is a thin
+the message shapes `backend/src/server.ts` sends — three of these
+(`tool_call`, `reconnecting`, `passive_listen`) didn't exist in the
+original version of this file, and were added one at a time as
+`backend/src/geminiSession.ts` grew new callbacks (see [Backend Deep
+Dive](03-backend-deep-dive.html)). `WebSocket` here is a built-in browser
+API — no library needed to open one. The rest of the class is a thin
 "translate a JS/browser concept into the app's own vocabulary" layer:
 callers of `VoiceSocket` never touch a raw `WebSocket` or write `.send()`
-calls themselves — they call `startTurn()`/`sendAudioChunk()`/`endTurn()`
-and receive typed `VoiceEvent`s, matching one-to-one with the protocol
-described in [Architecture Overview](02-architecture-overview.html).
+calls themselves — they call methods like `startTurn()` or
+`selectActivity()` and receive typed `VoiceEvent`s back.
 
 ## `lib/audio.ts` — turning the microphone into data, and data into sound
 
@@ -163,53 +169,166 @@ hand-off between the two threads is the entire reason this file has to
 exist as a separate "worklet" module rather than being ordinary code
 inside `audio.ts`.
 
-## `app/page.tsx` — the button, and the state machine tying it together
+## `app/page.tsx` — the button, the activity menu, and the state machine
 
-The whole visible app is one component holding a single piece of state:
+The main component now holds several pieces of state, but the core is
+still one state machine:
 
 ```typescript
-type State = "connecting" | "ready" | "listening" | "responding" | "error";
+type State = "connecting" | "ready" | "listening" | "responding" | "reconnecting" | "error";
 ```
 
-This is a TypeScript **union of exact string values** — `state` can only
-ever be one of these five, and every possible UI treatment (`STATE_LABEL`,
-`STATE_COLOR`) is defined once per state as a lookup table, rather than as
-scattered `if` statements throughout the render code. Reading the flow in
-order:
+Two states were added since the original version: `"reconnecting"`
+(shown while `geminiSession.ts` retries a dropped connection — see
+[Backend Deep Dive](03-backend-deep-dive.html)) and, separately, the
+`"passive_listen"` *event* is handled without a dedicated state at all —
+it just quietly returns to `"ready"`, since no audio was ever sent for
+that turn and nothing visibly happened from the child's point of view.
+Every possible UI treatment (`STATE_LABEL`, `STATE_COLOR`) is still
+defined once per state as a lookup table, rather than scattered `if`
+statements through the render code.
+
+Reading the flow in order:
 
 1. On page load, `useEffect` runs once: creates an `AudioPlayer`, creates
    a `VoiceSocket`, and calls `.connect(...)`, wiring each possible
-   `VoiceEvent` to a state transition — e.g. `case "ready": setState("ready")`.
-   `state` starts as `"connecting"` and the button is disabled until this
-   resolves.
-2. **Pressing the button** (`onPointerDown`, which fires for mouse,
-   touch, and stylus input alike — one handler covers every input
-   device) calls `handlePressStart()`: sends `startTurn()` over the
-   socket, starts a `MicStreamer`, wires its captured chunks straight to
-   `voiceSocket.sendAudioChunk(...)`, and sets `state` to `"listening"`.
-   If the state was `"responding"` (the AI mid-answer), it resets audio
-   playback first — this is the barge-in behavior from [Architecture
-   Overview](02-architecture-overview.html), triggered directly by this
-   button press.
-3. **Releasing the button** (`onPointerUp`/`onPointerLeave`/
-   `onPointerCancel` — all three are wired to the same handler, since a
-   finger sliding off the button on a touchscreen should end the turn
-   exactly like a normal release) calls `handlePressEnd()`: stops the mic,
-   sends `endTurn()`, and sets `state` to `"responding"`.
-4. Audio chunks arriving from the backend (`case "audio":`) are simply
-   handed to `playerRef.current?.enqueue(event.data)` — the component
-   itself does no audio work directly; it just routes events to the
-   `AudioPlayer`/`MicStreamer` instances doing the real work.
-5. `case "turn_complete":` sets `state` back to `"ready"`, closing the
-   loop.
+   `VoiceEvent` to a state transition. `state` starts as `"connecting"`
+   and the button is disabled until this resolves.
+2. **Pressing the button** (`onPointerDown`) calls `handlePressStart()`:
+   sends `startTurn()`, starts a `MicStreamer`, and sets `state` to
+   `"listening"` — resetting audio playback first if Gemini was
+   mid-answer (barge-in, see [Architecture
+   Overview](02-architecture-overview.html)).
+3. **Releasing the button** calls `handlePressEnd()`: stops the mic, sends
+   `endTurn()`, sets `state` to `"responding"`.
+4. Audio chunks (`case "audio":`) go straight to
+   `playerRef.current?.enqueue(event.data)`.
+5. `case "turn_complete":` and `case "passive_listen":` both return to
+   `"ready"` — the only difference is that the second one never played
+   any audio in between.
+6. `case "reconnecting":` stops the mic (in case the child was mid-press
+   when the connection dropped) and shows the reconnecting state;
+   `case "ready":` (sent again once reconnected) brings it back — the
+   *same* event type used for the very first connection and for a
+   successful reconnect, since from the frontend's point of view they're
+   identical: "the backend is ready for a turn."
 
-The `disposed` flag inside the `useEffect` guards against a React-specific
-quirk in development mode (Strict Mode intentionally runs setup/cleanup
-twice, to help catch bugs) — without it, a stray event from an
-already-torn-down first connection could otherwise land on state setters
-and race against the real, second connection. It has no effect on the
-production build's actual behavior; it only matters during local
-development.
+### Reacting on screen: the `tool_call` event
+
+```typescript
+case "tool_call":
+  if (event.name === "show_visual" && typeof event.args.content === "string") {
+    if (visualTimeoutRef.current) clearTimeout(visualTimeoutRef.current);
+    setVisualKey((k) => k + 1);
+    setActiveVisual(event.args.content as string);
+    visualTimeoutRef.current = setTimeout(() => setActiveVisual(null), VISUAL_DISPLAY_MS);
+  } else if (event.name === "set_scene" && typeof event.args.theme === "string") {
+    const theme = event.args.theme as string;
+    if (theme in SCENE_GRADIENTS) setSceneTheme(theme as SceneTheme);
+  }
+  break;
+```
+
+`show_visual` and `set_scene` (see [Backend Deep
+Dive](03-backend-deep-dive.html) for the tools themselves) both arrive as
+this one event shape, distinguished by `event.name`. `show_visual`'s
+content — an emoji, a number, or a letter — is shown via a `key={visualKey}`
+trick: incrementing a counter and using it as React's `key` prop forces
+React to treat each occurrence as a brand-new element, which restarts the
+CSS pop-in animation even if the *same* content (e.g. the same emoji
+twice in a row) is shown back to back — without a changing key, React
+would just leave the existing element in place and the animation
+wouldn't replay. The displayed size adapts to content length
+(`Array.from(activeVisual).length <= 1 ? "text-[9rem]" : "text-[6rem]"`)
+so a two-digit number doesn't overflow the way a single emoji or letter
+wouldn't.
+
+### The activity menu: steering the conversation without reconnecting
+
+```typescript
+const ACTIVITIES = [
+  { id: "numbers", emoji: "🔢", label: "Numbers" },
+  { id: "letters", emoji: "🔤", label: "Letters" },
+  { id: "colors", emoji: "🎨", label: "Colors" },
+  { id: "animals", emoji: "🐘", label: "Animals" },
+  { id: "songs", emoji: "🎵", label: "Songs" },
+];
+
+function handleSelectActivity(activityId: string) {
+  if (state !== "ready") return;
+  voiceSocketRef.current?.selectActivity(activityId);
+  setState("responding");
+}
+```
+
+These render as icon-only buttons (plus a sixth, a `<Link>` to `/puzzle`)
+— no text the child would need to read to use them, consistent with this
+app's "voice-first, no reading required" design. Tapping one is only
+allowed while `state === "ready"`: mid-recording or mid-answer, a tap
+would either interrupt the child's own turn or land while Gemini's
+already speaking, neither of which is what an icon tap should do.
+`setState("responding")` immediately after sending is **optimistic** —
+the frontend assumes a response is coming before it's confirmed, purely
+so the button visually disables itself right away; the real state
+transition to `"ready"` still comes from the backend's own
+`turn_complete` once Gemini actually finishes.
+
+## `app/recap/page.tsx` — the parent-facing session history
+
+A single `useEffect` fetches `GET /recap` from the backend (deriving the
+HTTP URL from the same `NEXT_PUBLIC_BACKEND_WS_URL` env var the voice
+socket uses, just swapping `ws://` for `http://`, so there's only one
+address to configure) and renders the returned session list — each
+session's `summaryForParent` plus colored "chip" tags for its topics, new
+words, and still-tricky words. There's no loading spinner library or
+fancy state machine here: just `sessions: SessionRecord[] | null` (`null`
+while loading, `[]` once loaded with nothing yet, populated once there's
+real history) and a plain `error: string | null` for a failed fetch — the
+minimum state needed to show the three real outcomes (loading, empty,
+here's the data) correctly.
+
+## `app/puzzle/page.tsx` — a standalone matching-pairs game
+
+This page is deliberately independent of everything else in the app — no
+`VoiceSocket`, no `fetch`, no Gemini involvement at all. It's a classic
+memory/concentration game: flip two cards, and if they match, they stay
+revealed; if not, they flip back after a short pause.
+
+```typescript
+function newDeck(): Card[] {
+  const chosenEmoji = shuffled(EMOJI_POOL).slice(0, PAIR_COUNT);
+  const pairedAndShuffled = shuffled([...chosenEmoji, ...chosenEmoji]);
+  return pairedAndShuffled.map((emoji, i) => ({ id: i, emoji, flipped: false, matched: false }));
+}
+```
+
+Building the deck is two `shuffled()` calls: pick `PAIR_COUNT` random
+emoji out of a larger pool (so replaying gives a different set), then
+duplicate each one and shuffle the *combined* list of pairs (so matching
+positions aren't predictable). `shuffled()` itself is a standard
+Fisher–Yates shuffle — walk the array backward, and at each position swap
+in a random earlier element — a well-known, unbiased way to randomly
+reorder a list (a naive "sort by `Math.random()`" approach, which you may
+see elsewhere, is a common but subtly biased alternative worth knowing to
+avoid).
+
+```typescript
+function handleFlip(id: number) {
+  if (busy || won || flippedIds.length === 2) return;
+  const tapped = cards.find((c) => c.id === id);
+  if (!tapped || tapped.flipped || tapped.matched) return;
+  // ... flip it, and if this is the second card flipped this turn,
+  // compare emoji and either mark both matched or (after a timeout) flip
+  // both back
+}
+```
+
+`busy` is `true` for the brief window where a *non-matching* pair is
+shown face-up before flipping back — it exists specifically to block a
+third tap from interfering while that timeout is pending. This is a
+common shape for any "two-step selection with a timed reveal" UI: a
+boolean state purely to gate input during an in-between moment that
+doesn't correspond to any of the "real" states of the game.
 
 ---
 [← Backend Deep Dive](03-backend-deep-dive.html) · [Next: Glossary →](05-glossary.html)

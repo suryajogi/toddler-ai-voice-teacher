@@ -20,6 +20,7 @@ import {
 import { buildTeacherSystemInstruction } from "./teacherPersona.js";
 import { detectSideConversation } from "./audioProcessingEngine.js";
 import { analyzeAndExtractProfileFacts, recordInteractionMetric } from "./botMemoryEngine.js";
+import { fetchSongLyrics } from "./songLyricsEngine.js";
 
 const MODEL = process.env.GEMINI_LIVE_MODEL ?? "gemini-2.5-flash-native-audio-latest";
 const VOICE_NAME = process.env.GEMINI_LIVE_VOICE ?? "Aoede";
@@ -34,17 +35,21 @@ const SCENE_THEMES = ["jungle", "space", "ocean", "party", "calm"] as const;
 // told to use them). Both are pure UI side effects with nothing for the
 // backend itself to compute, so every call is acknowledged immediately
 // with a trivial "ok" response — see handleToolCall below.
-const TOOL_DECLARATIONS: FunctionDeclaration[] = [
+const SCREEN_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
-    name: "show_emoji",
+    name: "show_visual",
     description:
-      "Flashes one big emoji on the child's screen — e.g. to illustrate an animal, object, color, or number just mentioned, or to celebrate something the child did well.",
+      "Shows one big visual on the child's screen to match what you're teaching right now — an emoji for an animal/object/color/celebration, a digit or short number for counting (e.g. \"3\"), or a single letter for the English or Telugu alphabet (e.g. \"B\" or \"అ\"). Not just decoration — use this as the actual visual aid while teaching numbers, letters, animals, or colors, not only for occasional flourishes.",
     parameters: {
       type: Type.OBJECT,
       properties: {
-        emoji: { type: Type.STRING, description: 'A single emoji character, e.g. "🐘" or "🎉".' },
+        content: {
+          type: Type.STRING,
+          description:
+            'What to show — one emoji ("🐘"), one number as digits ("3", "12"), or a single letter ("B", "అ"). Keep it short: one emoji, one number, or one letter at a time, not a sentence.',
+        },
       },
-      required: ["emoji"],
+      required: ["content"],
     },
   },
   {
@@ -59,6 +64,41 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
 ];
+
+// Unlike the two above, this one isn't an instant UI side effect — handling
+// it means a real (occasionally multi-second) internet lookup via
+// songLyricsEngine.ts before a response can be sent back. See
+// handleSongLyricsCall below for how that's threaded through
+// sendToolResponse instead of being acknowledged immediately.
+const SONG_LYRICS_DECLARATION: FunctionDeclaration = {
+  name: "get_song_lyrics",
+  description:
+    "Looks up the real lyrics for a song so you can sing/recite it accurately instead of relying on memory alone — a nursery rhyme, a folk song, or a song from a movie/show the child likes are all fine (English or Telugu). Call this whenever the child asks you to sing something, however they phrase the request.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      songName: {
+        type: Type.STRING,
+        description:
+          'The song\'s name as the child said or implied it — include the movie/show name too if the child mentioned or implied one (e.g. "Butta Bomma from Ala Vaikunthapurramuloo"), since that helps find the right song.',
+      },
+      language: { type: Type.STRING, enum: ["English", "Telugu"] },
+    },
+    required: ["songName", "language"],
+  },
+};
+
+const TOOL_DECLARATIONS: FunctionDeclaration[] = [...SCREEN_TOOL_DECLARATIONS, SONG_LYRICS_DECLARATION];
+
+// The topic hint sent for each activity-menu icon (frontend/app/page.tsx) —
+// keys here must match the `activity` id the frontend sends exactly.
+const ACTIVITY_TOPICS: Record<string, string> = {
+  numbers: "numbers and counting",
+  letters: "the alphabet — English and Telugu letters",
+  colors: "colors",
+  animals: "animals and the sounds they make",
+  songs: "songs and rhymes — sing something!",
+};
 
 export interface GeminiSessionCallbacks {
   onAudio: (pcm: Buffer) => void;
@@ -137,7 +177,10 @@ export class GeminiVoiceSession {
         model: MODEL,
         config: {
           responseModalities: [Modality.AUDIO],
-          systemInstruction: buildTeacherSystemInstruction(memoryContext, { includeScreenTools: true }),
+          systemInstruction: buildTeacherSystemInstruction(memoryContext, {
+            includeScreenTools: true,
+            includeSongLookup: true,
+          }),
           // No languageCode set deliberately — the child switches between
           // English and Telugu (and mixes them) freely, so we don't want
           // to pin the session to a single language.
@@ -287,13 +330,49 @@ export class GeminiVoiceSession {
   }
 
   private handleToolCall(call: FunctionCall): void {
-    if (call.name) this.callbacks.onToolCall(call.name, call.args ?? {});
-    // Every one of our tools is a pure, instant UI side effect — there's
+    if (!call.name) return;
+    this.callbacks.onToolCall(call.name, call.args ?? {});
+
+    if (call.name === "get_song_lyrics") {
+      // The one tool that isn't instant — a real internet lookup, so it's
+      // handled separately and responds to Gemini asynchronously once the
+      // lyrics (or a not-found signal) are actually in hand, rather than
+      // acknowledging immediately like the two screen tools below.
+      void this.handleSongLyricsCall(call);
+      return;
+    }
+
+    // show_visual / set_scene are pure, instant UI side effects — there's
     // nothing to compute, so acknowledge immediately rather than waiting on
     // anything (e.g. a round trip to the browser) that could stall Gemini
     // mid-conversation.
     const response: FunctionResponse = { id: call.id, name: call.name, response: { output: "ok" } };
     this.session?.sendToolResponse({ functionResponses: response });
+  }
+
+  private async handleSongLyricsCall(call: FunctionCall): Promise<void> {
+    const songName = typeof call.args?.songName === "string" ? call.args.songName : "";
+    const language = typeof call.args?.language === "string" ? call.args.language : "English";
+
+    let output: Record<string, unknown>;
+    try {
+      const lyrics = await fetchSongLyrics(this.apiKey, songName, language);
+      output = lyrics
+        ? { lyrics }
+        : {
+            error:
+              "Lyrics for that specific song aren't known (it may be too obscure to have been searched for, or its content isn't appropriate for a toddler). Tell the child warmly that you don't know that specific one, and offer to sing something else instead.",
+          };
+    } catch (err) {
+      console.error("get_song_lyrics tool call failed:", err);
+      output = {
+        error: "The lyrics lookup failed. Apologize briefly and warmly, and suggest a different song instead.",
+      };
+    }
+
+    this.session?.sendToolResponse({
+      functionResponses: { id: call.id, name: call.name, response: output },
+    });
   }
 
   /** Resolves once the underlying Gemini Live session is open (or rejects if connect failed). */
@@ -316,6 +395,24 @@ export class GeminiVoiceSession {
    * (not silence detection) is what tells Gemini the child is done talking. */
   endTurn(): void {
     this.session?.sendRealtimeInput({ activityEnd: {} });
+  }
+
+  /**
+   * Called when the child taps an activity icon on their screen (see
+   * frontend/app/page.tsx's activity menu) instead of speaking. Uses
+   * `sendClientContent` — a text turn, not realtime audio — to nudge the
+   * *already-open* session toward a topic without reconnecting (which
+   * would lose the conversation-so-far and the session's memory context).
+   * teacherPersona.ts's "WHEN THE CHILD TAPS AN ACTIVITY BUTTON" section is
+   * what tells the model how to react to the bracketed note this sends.
+   */
+  selectActivity(activityId: string): void {
+    const topic = ACTIVITY_TOPICS[activityId];
+    if (!topic) return;
+    this.session?.sendClientContent({
+      turns: `[The child tapped the "${activityId}" button on their screen, asking to learn about ${topic}.]`,
+      turnComplete: true,
+    });
   }
 
   /** The best-effort transcript of this session so far, for summarization. */

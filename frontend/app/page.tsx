@@ -41,19 +41,35 @@ const SCENE_GRADIENTS: Record<SceneTheme, string> = {
   calm: "linear-gradient(180deg, #fff8ec 0%, #fff8ec 100%)",
 };
 
-const EMOJI_DISPLAY_MS = 2200;
+// Long enough for the child to actually look at a number or letter while
+// it's being taught, not just register a quick flash.
+const VISUAL_DISPLAY_MS = 3200;
+
+// Ids here must match backend/src/geminiSession.ts's ACTIVITY_TOPICS keys
+// exactly — tapping one sends { type: "select_activity", activity: id }
+// over the voice socket to nudge the AI teacher's next response toward
+// that topic (see selectActivity there for how, and
+// teacherPersona.ts's "WHEN THE CHILD TAPS AN ACTIVITY BUTTON" for how the
+// model is told to react). Icon-only by design — the child can't read yet.
+const ACTIVITIES: { id: string; emoji: string; label: string }[] = [
+  { id: "numbers", emoji: "🔢", label: "Numbers" },
+  { id: "letters", emoji: "🔤", label: "Letters" },
+  { id: "colors", emoji: "🎨", label: "Colors" },
+  { id: "animals", emoji: "🐘", label: "Animals" },
+  { id: "songs", emoji: "🎵", label: "Songs" },
+];
 
 export default function Home() {
   const [state, setState] = useState<State>("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sceneTheme, setSceneTheme] = useState<SceneTheme>("calm");
-  const [activeEmoji, setActiveEmoji] = useState<string | null>(null);
-  const [emojiKey, setEmojiKey] = useState(0);
+  const [activeVisual, setActiveVisual] = useState<string | null>(null);
+  const [visualKey, setVisualKey] = useState(0);
 
   const voiceSocketRef = useRef<VoiceSocket | null>(null);
   const micRef = useRef<MicStreamer | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
-  const emojiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visualTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // Guards against React Strict Mode's dev-only double-invocation of
@@ -96,14 +112,15 @@ export default function Home() {
           break;
         case "tool_call":
           // The AI teacher reacting on-screen mid-conversation — see
-          // backend/src/geminiSession.ts's show_emoji/set_scene tools and
+          // backend/src/geminiSession.ts's show_visual/set_scene tools and
           // teacherPersona.ts's "USING YOUR SCREEN TOOLS" section for when
-          // it chooses to call these.
-          if (event.name === "show_emoji" && typeof event.args.emoji === "string") {
-            if (emojiTimeoutRef.current) clearTimeout(emojiTimeoutRef.current);
-            setEmojiKey((k) => k + 1);
-            setActiveEmoji(event.args.emoji as string);
-            emojiTimeoutRef.current = setTimeout(() => setActiveEmoji(null), EMOJI_DISPLAY_MS);
+          // it chooses to call these. content is an emoji, a number, or a
+          // single English/Telugu letter — all rendered the same way.
+          if (event.name === "show_visual" && typeof event.args.content === "string") {
+            if (visualTimeoutRef.current) clearTimeout(visualTimeoutRef.current);
+            setVisualKey((k) => k + 1);
+            setActiveVisual(event.args.content as string);
+            visualTimeoutRef.current = setTimeout(() => setActiveVisual(null), VISUAL_DISPLAY_MS);
           } else if (event.name === "set_scene" && typeof event.args.theme === "string") {
             const theme = event.args.theme as string;
             if (theme in SCENE_GRADIENTS) setSceneTheme(theme as SceneTheme);
@@ -139,7 +156,7 @@ export default function Home() {
       disposed = true;
       voiceSocket.close();
       micRef.current?.stop();
-      if (emojiTimeoutRef.current) clearTimeout(emojiTimeoutRef.current);
+      if (visualTimeoutRef.current) clearTimeout(visualTimeoutRef.current);
     };
   }, []);
 
@@ -172,18 +189,31 @@ export default function Home() {
     setState("responding");
   }
 
+  function handleSelectActivity(activityId: string) {
+    // Only while idle — picking a topic mid-turn would either interrupt
+    // the child's own recording or land while Gemini's already mid-answer,
+    // neither of which is what a tap on an icon should do.
+    if (state !== "ready") return;
+    voiceSocketRef.current?.selectActivity(activityId);
+    setState("responding");
+  }
+
   return (
     <main
       className="flex min-h-full flex-1 flex-col items-center justify-center gap-8 px-6 py-16 text-center transition-[background] duration-[1200ms] ease-in-out"
       style={{ background: SCENE_GRADIENTS[sceneTheme] }}
     >
-      {activeEmoji && (
+      {activeVisual && (
         <div
-          key={emojiKey}
+          key={visualKey}
           aria-hidden="true"
-          className="emoji-pop pointer-events-none fixed inset-0 z-10 flex items-center justify-center text-[9rem] leading-none"
+          // A single emoji/digit/letter reads well huge; a 2-digit number
+          // (e.g. "12") needs a smaller size to stay comfortably on screen.
+          className={`emoji-pop pointer-events-none fixed inset-0 z-10 flex items-center justify-center font-extrabold leading-none text-amber-800 ${
+            Array.from(activeVisual).length <= 1 ? "text-[9rem]" : "text-[6rem]"
+          }`}
         >
-          {activeEmoji}
+          {activeVisual}
         </div>
       )}
 
@@ -221,7 +251,29 @@ export default function Home() {
         </div>
       )}
 
-      <Link href="/recap" className="mt-4 text-xs text-[color:var(--foreground)]/40 hover:underline">
+      <div className="grid w-full max-w-xs grid-cols-3 gap-3">
+        {ACTIVITIES.map((activity) => (
+          <button
+            key={activity.id}
+            type="button"
+            disabled={state !== "ready"}
+            onClick={() => handleSelectActivity(activity.id)}
+            className="flex flex-col items-center gap-1 rounded-2xl bg-white/70 px-2 py-3 text-xs font-semibold text-amber-800 shadow-sm transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="text-3xl leading-none">{activity.emoji}</span>
+            {activity.label}
+          </button>
+        ))}
+        <Link
+          href="/puzzle"
+          className="flex flex-col items-center gap-1 rounded-2xl bg-white/70 px-2 py-3 text-xs font-semibold text-amber-800 shadow-sm transition hover:bg-white"
+        >
+          <span className="text-3xl leading-none">🧩</span>
+          Puzzle
+        </Link>
+      </div>
+
+      <Link href="/recap" className="text-xs text-[color:var(--foreground)]/40 hover:underline">
         For parents: today&apos;s recap
       </Link>
     </main>

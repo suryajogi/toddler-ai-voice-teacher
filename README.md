@@ -35,10 +35,11 @@ On top of the core voice loop, the backend now also:
   teacher builds on what's already been covered instead of starting cold
   every time.
 - **Reacts on screen.** Two Gemini Live function-calling tools,
-  `show_emoji` and `set_scene` (declared in `backend/src/geminiSession.ts`),
-  let the model flash a matching emoji or shift the background theme
-  mid-conversation — see it land as `tool_call` WebSocket messages, handled
-  in `frontend/app/page.tsx`.
+  `show_visual` and `set_scene` (declared in `backend/src/geminiSession.ts`),
+  let the model shift the background theme or show something big on
+  screen — an emoji, a number, or an English/Telugu letter — as an active
+  teaching aid while it talks, not just a decorative flourish. Lands as
+  `tool_call` WebSocket messages, handled in `frontend/app/page.tsx`.
 - **Reconnects automatically.** Session resumption tokens
   (`sessionResumptionUpdate` in the Live API) let the backend silently
   retry once if the connection to Gemini drops mid-conversation, rather
@@ -72,6 +73,32 @@ On top of the core voice loop, the backend now also:
   `{"response": null, "passiveListening": true, ...}` for a detected side
   conversation. Useful for testing the memory/filtering pipeline directly;
   the voice WebSocket remains the actual product experience.
+- **Sings real songs and rhymes — including movie/show songs.** A third
+  tool, `get_song_lyrics` (`backend/src/songLyricsEngine.ts`), recalls
+  actual lyrics before singing/reciting them, rather than the model
+  free-associating from memory mid-sentence — nursery rhymes, traditional
+  Telugu paatalu, and movie/show songs (English or Telugu) are all fair
+  game; being a movie song is not a reason to refuse. Getting this right
+  took two real fixes, both documented in the file's header comment: (1)
+  Google Search grounding actually made popular movie songs *less*
+  available, not more — a grounded answer citing a real lyrics page
+  triggers stricter copyright caution than the model just answering from
+  its own trained knowledge, so grounding is deliberately not used; (2)
+  prompt wording/ordering matters a lot — leading with any
+  appropriateness framing (even "copyright is NOT a reason to refuse")
+  measurably made the model over-refuse songs it otherwise knows fine.
+  Unlike the instant screen tools, this one is genuinely asynchronous (a
+  real lookup takes a moment), so the AI is told to keep talking naturally
+  while it "remembers the song" rather than going silent.
+- **An icon-based activity menu.** The home screen has picture buttons
+  (Numbers/Letters/Colors/Animals/Songs, no reading required) that nudge
+  the *already-open* conversation toward that topic via
+  `GeminiVoiceSession.selectActivity()` — a `sendClientContent` text turn
+  injected into the live session, not a reconnect, so the session's memory
+  context and conversation-so-far are preserved. A sixth icon, 🧩 Puzzle,
+  links to `/puzzle`: a standalone picture-matching memory game
+  (`frontend/app/puzzle/page.tsx`) with no voice/backend dependency at
+  all.
 
 None of this needs extra setup beyond the existing `GEMINI_API_KEY` —
 `backend/data/` is created automatically on first session and is
@@ -110,17 +137,21 @@ are enforced server-side, not something the client could bypass.
 - `backend/` — Node.js + TypeScript. `src/server.ts` is the HTTP+WebSocket
   relay (plus the `/api/v1/bot/chat` text endpoint); `src/geminiSession.ts`
   wraps one Gemini Live session per connected child (transcription,
-  screen-reaction tools, reconnect-on-drop, side-conversation filtering);
-  `src/teacherPersona.ts` is the system instruction (persona + safety
-  rules), taken directly from the requirements doc, plus past-session
-  memory; `src/learningProfile.ts` and `src/sessionSummarizer.ts` are the
-  session-summary/recap persistence layer; `src/botMemoryEngine.ts`
-  (SQLite) and `src/audioProcessingEngine.ts` are the structured long-term
-  memory + side-conversation filter described above.
-- `frontend/` — Next.js + TypeScript + Tailwind. One page
-  (`app/page.tsx`): a big press-and-hold button, minimal/no text. Mic
-  capture and audio playback (`lib/audio.ts`) use the Web Audio API
-  directly — 16-bit PCM at 16kHz for input, 24kHz for Gemini's output.
+  screen-reaction + song-lookup tools, activity-menu text injection,
+  reconnect-on-drop, side-conversation filtering); `src/teacherPersona.ts`
+  is the system instruction (persona + safety rules), taken directly from
+  the requirements doc, plus past-session memory; `src/learningProfile.ts`
+  and `src/sessionSummarizer.ts` are the session-summary/recap persistence
+  layer; `src/botMemoryEngine.ts` (SQLite) and
+  `src/audioProcessingEngine.ts` are the structured long-term memory +
+  side-conversation filter; `src/songLyricsEngine.ts` is the
+  search-grounded lyrics lookup, all described above.
+- `frontend/` — Next.js + TypeScript + Tailwind. Main page (`app/page.tsx`):
+  a big press-and-hold button plus a small icon-based activity menu,
+  minimal/no text otherwise. Mic capture and audio playback (`lib/audio.ts`)
+  use the Web Audio API directly — 16-bit PCM at 16kHz for input, 24kHz for
+  Gemini's output. `app/puzzle/page.tsx` is the standalone matching game;
+  `app/recap/page.tsx` is the parent-facing session recap.
 
 ## Running it locally
 

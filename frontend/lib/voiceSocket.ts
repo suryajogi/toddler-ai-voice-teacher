@@ -48,6 +48,15 @@ export class VoiceSocket {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "end_turn" }));
   }
 
+  /** Tapping an activity-menu icon instead of speaking — see
+   * backend/src/geminiSession.ts's selectActivity for how this steers the
+   * ongoing conversation without reconnecting. */
+  selectActivity(activityId: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: "select_activity", activity: activityId }));
+    }
+  }
+
   close(): void {
     this.ws?.close();
     this.ws = null;

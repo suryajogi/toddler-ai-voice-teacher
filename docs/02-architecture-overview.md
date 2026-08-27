@@ -113,14 +113,59 @@ feel instant and clean, and both are visible directly in the code:
 
 The AI's entire personality and behavior — warm tone, bilingual
 code-switching, safety boundaries around personal information and
-age-appropriate content — is a single block of instructions in
+age-appropriate content — is a block of instructions assembled by
 `backend/src/teacherPersona.ts`, sent to Gemini once, when each session
 opens. It lives on the **backend**, never touched by the browser, for the
 same reason the API key does: anything sent to the browser can be
 inspected or tampered with by whoever's using it, and this instruction
 text is exactly what must stay authoritative and untamperable. See
 [Backend Deep Dive](03-backend-deep-dive.html) for the full breakdown of
-what that instruction actually says and why.
+what that instruction actually says and why — including why it's now
+assembled from several pieces rather than one fixed string.
+
+## Beyond talking: function calling lets the AI *do* things
+
+Everything above covers the AI *saying* something back. Three more
+capabilities — flashing something on the child's screen, changing the
+background mood, and looking up real song lyrics before singing — work
+completely differently, through a mechanism called **function calling**
+(sometimes "tool use"): the backend tells Gemini, up front, about a small
+set of named actions it's allowed to request (with a description of what
+each one does and what inputs it needs), and Gemini can decide,
+mid-conversation, to call one — the same way it decides what words to
+say, just structured as a named action instead of speech. The backend
+executes the actual action (updating a database, telling the browser to
+flash an emoji) and reports back what happened, and Gemini continues the
+conversation with that result in hand.
+
+This is why a request like "can you sing X" can involve a real pause: the
+model calls a tool, the backend goes and looks something up (occasionally
+taking a few real seconds), and only then does Gemini continue speaking.
+See [Backend Deep Dive](03-backend-deep-dive.html) for exactly which three
+tools exist and how the instant ones differ from the slow one.
+
+## Remembering across sessions, and the two different memory stores
+
+Each Gemini Live connection is its own isolated conversation — nothing
+carries over automatically when the child opens the app again tomorrow.
+"Session memory" is something this app builds *on top of* the Live API,
+not a feature of the API itself: after each conversation ends, the
+backend asks a separate, plain (non-live) Gemini call to summarize what
+was said, and saves the result so the *next* session's persona can be
+built with that history already folded in. This is also why memory only
+ever affects the next session, never adjusts mid-conversation — the
+persona is fixed the moment a Live session opens.
+
+There are two separate stores behind this, answering two different
+questions, covered in full in [Backend Deep Dive](03-backend-deep-dive.html):
+a JSON file tracking loose session-level summaries ("what did we talk
+about lately"), and a small SQLite database tracking durable, categorized
+facts about the child ("what do I know about this child" — favorite
+color, pets, family). Both are populated by the same kind of plain,
+one-shot Gemini call used for song lookups and the text-only
+`/api/v1/bot/chat` endpoint — a completely different, simpler API surface
+than the real-time Live connection, even though both go through the same
+`@google/genai` package.
 
 ---
 [← Your Toolbox](01-your-toolbox.html) · [Next: Backend Deep Dive →](03-backend-deep-dive.html)
